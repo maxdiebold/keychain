@@ -30,7 +30,7 @@ nolockopt=false
 lockwait=5
 openssh=unknown
 sunssh=unknown
-confhost=unknown
+confhost=()
 sshconfig=false
 quickopt=false
 quietopt=false
@@ -1074,8 +1074,8 @@ add_sshkey() {
 # synopsis: parse_mykeys
 # Sets $sshkeys and $gpgkeys based on $mykeys
 parse_mykeys() {
-	# Possible path to the private key: if --confhost variable used.
-	pkeypath="$1"
+	# Possible paths to the private keys: if --confhost variable used.
+	pkeypaths="$1"
 
 	# Parse $mykeys into positional params to preserve spaces in filenames
 	set -f		   # disable globbing
@@ -1086,7 +1086,14 @@ parse_mykeys() {
 	IFS="$pm_IFS"  # restore IFS
 	set +f		   # re-enable globbing
 
+	for pkeypath in "${pkeypaths[@]}"; do
+		if [ -f "$pkeypath" ]; then
+			add_sshkey "$pkeypath"; continue
+		fi
+	done
+
 	for pm_k in "$@"; do
+		echo $pm_k
 		# Check for ssh
 		if wantagent ssh; then
 			if [ -f "$pm_k" ]; then
@@ -1095,8 +1102,6 @@ parse_mykeys() {
 				add_sshkey "$HOME/.ssh/$pm_k" ; continue
 			elif [ -f "$HOME/.ssh2/$pm_k" ]; then
 				add_sshkey "$HOME/.ssh2/$pm_k" ; continue
-			elif [ -f "$pkeypath" ]; then
-				add_sshkey "$pkeypath"; continue
 			fi
 		fi
 
@@ -1315,8 +1320,9 @@ while [ -n "$1" ]; do
 			;;
 		--confhost|-c)
 			if [ -e ~/.ssh/config ]; then
+				shift
 				sshconfig=true
-				confhost="$2"
+				confhost+=("$1")
 			else
 				warn "~/.ssh/config not found; --confhost/-c option ignored."
 			fi
@@ -1556,13 +1562,17 @@ $noaskopt && { qprint; exit 0; }
 # If the --confhost option used, determine the path to the private key as
 # written in the ~/.ssh/config and add it to ssh-add.
 if $sshconfig; then
-	pkeypath=$(confpath "$confhost")
-	eval pkeypath=$pkeypath
+	pkeypaths=()
+	for conf in "${confhost[@]}"; do
+		pkeypath=$(confpath "$conf")
+		eval pkeypath=$pkeypath
+		pkeypaths+=("$pkeypath")
+	done
 fi
 
 # Parse $mykeys into ssh vs. gpg keys; it may be necessary in the future to
 # differentiate on the cmdline
-parse_mykeys "$pkeypath" || die
+parse_mykeys "$pkeypaths" || die
 
 # Load ssh keys
 if wantagent ssh; then
